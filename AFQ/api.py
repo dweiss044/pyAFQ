@@ -2024,7 +2024,7 @@ class AFQ(object):
         self.set_fwdti_md()
         return self.data_frame['dti_md_file']
 
-    fwdti_fa = property(get_fwdti_md, set_fwdti_md)
+    fwdti_md = property(get_fwdti_md, set_fwdti_md)
 
     def set_dti(self):
         if 'dti_params_file' not in self.data_frame.columns:
