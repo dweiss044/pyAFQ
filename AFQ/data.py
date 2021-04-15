@@ -1907,12 +1907,7 @@ def organize_abcd_data(path=None, clear_previous_afq=False, identifier=None,
                     
                     srcdir = op.join(ABCD_home,subj,sess,'dwi')
                     shutil.copytree(srcdir, dwi_folder)
-                    for fn in os.listdir(dwi_folder):
-                        if '.nii' in fn:
-                            dwisrc = op.join(dwi_folder,fn)
                     
-                    dwi_img = nib.load(dwisrc)
-                    nib.save(dwi_img, op.join(dwi_folder, op.basename(dwisrc) + '.gz'))
     else:
         logger.info('Dataset is already in place. If you want to fetch it '
                     + 'again please first remove the folder '
@@ -1926,9 +1921,6 @@ def organize_abcd_data(path=None, clear_previous_afq=False, identifier=None,
     to_bids_description(dmriprep_folder,
                         **{"Name": "ABCD %s" % identifier,
                            "PipelineDescription": {"Name": "ABCD"}})
-    # to_bids_description(freesurfer_folder,
-    #                     **{"Name": "Stanford HARDI",
-    #                        "PipelineDescription": {"Name": "freesurfer"}})
 
 
 

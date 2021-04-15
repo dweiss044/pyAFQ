@@ -497,6 +497,9 @@ class AFQ(object):
         self.scalar_dict = {
             "dti_fa": AFQ._dti_fa,
             "dti_md": AFQ._dti_md,
+            "dti_ad": AFQ._dti_ad,
+            "dti_ga": AFQ._dti_ga,
+            "dti_rd": AFQ._dti_rd,
             "fwdti_fa": AFQ._fwdti_fa,
             "fwdti_md": AFQ._fwdti_md,
             "dki_fa": AFQ._dki_fa,
@@ -658,9 +661,10 @@ class AFQ(object):
                 # For bvals and bvecs, use ``get_bval()`` and ``get_bvec()`` to
                 # walk up the file tree and inherit the closest bval and bvec
                 # files. Maintain input ``bids_filters`` in case user wants to
-                # specify acquisition labels, but pop suffix since it is
+                # specify acquisition labels, but pop suffix and extension since it is
                 # already specified inside ``get_bvec()`` and ``get_bval()``
                 suffix = bids_filters.pop("suffix", None)
+                extension = bids_filters.pop("extension", None)
                 bvec_file_list.append(bids_layout.get_bvec(dwi_data_file,
                                                            **bids_filters))
                 bval_file_list.append(bids_layout.get_bval(dwi_data_file,
@@ -1043,6 +1047,42 @@ class AFQ(object):
             meta = dict()
             afd.write_json(meta_fname, meta)
         return dti_md_file
+    
+    def _dti_ad(self, row):
+        dti_ad_file = self._get_fname(row, '_model-DTI_AD.nii.gz')
+        if not op.exists(dti_ad_file):
+            tf = self._dti_fit(row)
+            ad = tf.ad
+            self.log_and_save_nii(nib.Nifti1Image(ad, row['dwi_affine']),
+                                  dti_ad_file)
+            meta_fname = self._get_fname(row, '_model-DTI_AD.json')
+            meta = dict()
+            afd.write_json(meta_fname, meta)
+        return dti_ad_file
+    
+    def _dti_ga(self, row):
+        dti_ga_file = self._get_fname(row, '_model-DTI_GA.nii.gz')
+        if not op.exists(dti_ga_file):
+            tf = self._dti_fit(row)
+            ga = tf.ga
+            self.log_and_save_nii(nib.Nifti1Image(ga, row['dwi_affine']),
+                                  dti_ga_file)
+            meta_fname = self._get_fname(row, '_model-DTI_GA.json')
+            meta = dict()
+            afd.write_json(meta_fname, meta)
+        return dti_ga_file
+
+    def _dti_rd(self, row):
+        dti_rd_file = self._get_fname(row, '_model-DTI_RD.nii.gz')
+        if not op.exists(dti_rd_file):
+            tf = self._dti_fit(row)
+            rd = tf.rd
+            self.log_and_save_nii(nib.Nifti1Image(rd, row['dwi_affine']),
+                                  dti_rd_file)
+            meta_fname = self._get_fname(row, '_model-DTI_RD.json')
+            meta = dict()
+            afd.write_json(meta_fname, meta)
+        return dti_rd_file
 
     def _dki_fa(self, row):
         dki_fa_file = self._get_fname(row, '_model-DKI_FA.nii.gz')
@@ -2045,6 +2085,42 @@ class AFQ(object):
         return self.data_frame['dti_md_file']
 
     dti_md = property(get_dti_md, set_dti_md)
+
+    def set_dti_ad(self):
+        if 'dti_ad_file' not in self.data_frame.columns:
+            self.data_frame['dti_ad_file'] =\
+                self.data_frame.apply(self._dti_ad,
+                                        axis=1)
+
+    def get_dti_ad(self):
+        self.set_dti_ad()
+        return self.data_frame['dti_ad_file']
+
+    dti_ad = property(get_dti_ad, set_dti_ad)
+
+    def set_dti_ga(self):
+        if 'dti_ga_file' not in self.data_frame.columns:
+            self.data_frame['dti_ga_file'] =\
+                self.data_frame.apply(self._dti_ga,
+                                      axis=1)
+
+    def get_dti_ga(self):
+        self.set_dti_ga()
+        return self.data_frame['dti_ga_file']
+
+    dti_ga = property(get_dti_ga, set_dti_ga)
+
+    def set_dti_rd(self):
+        if 'dti_rd_file' not in self.data_frame.columns:
+            self.data_frame['dti_rd_file'] =\
+                self.data_frame.apply(self._dti_rd,
+                                      axis=1)
+
+    def get_dti_rd(self):
+        self.set_dti_rd()
+        return self.data_frame['dti_rd_file']
+
+    dti_rd = property(get_dti_rd, set_dti_rd)
 
     def set_dki(self):
         if 'dki_params_file' not in self.data_frame.columns:
