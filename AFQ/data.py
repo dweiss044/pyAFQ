@@ -98,7 +98,8 @@ BUNDLE_MAT_2_PYTHON = \
      'RightSLF': 'SLF_R', 'LeftSLF': 'SLF_L'}
 
 #afq_home = op.join(op.expanduser('~'), 'AFQ_data')
-afq_home = op.join('/data/rauschecker1/dweiss/AFQ', 'AFQ_data')
+cur_dir = op.dirname(op.realpath(__file__))
+afq_home = op.join(cur_dir, '../AFQ_data')
 
 baseurl = "https://ndownloader.figshare.com/files/"
 
