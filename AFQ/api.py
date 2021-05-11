@@ -671,6 +671,9 @@ class AFQ(object):
                                                            **bids_filters))
                 if suffix is not None:
                     bids_filters["suffix"] = suffix
+                
+                if extension is not None:
+                    bids_filters["extension"] = extension
 
                 if custom_tractography_bids_filters is not None:
                     custom_tract_list.append(
