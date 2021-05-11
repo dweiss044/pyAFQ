@@ -10,11 +10,13 @@ import AFQ.segmentation as seg
 import AFQ.utils.streamlines as aus
 import dipy.reconst.dki as dpy_dki
 import dipy.reconst.dti as dpy_dti
+import dipy.reconst.fwdti as dpy_fwdti
 import AFQ.tractography as aft
 from AFQ.models.csd import _fit as csd_fit
 from AFQ.models.dki import _fit as dki_fit
 from AFQ.models.dti import noise_from_b0
 from AFQ.models.dti import _fit as dti_fit
+from AFQ.models.fwdti import _fit as fwdti_fit
 import AFQ.data as afd
 from .version import version as pyafq_version
 import pandas as pd
@@ -495,6 +497,11 @@ class AFQ(object):
         self.scalar_dict = {
             "dti_fa": AFQ._dti_fa,
             "dti_md": AFQ._dti_md,
+            "dti_ad": AFQ._dti_ad,
+            "dti_ga": AFQ._dti_ga,
+            "dti_rd": AFQ._dti_rd,
+            "fwdti_fa": AFQ._fwdti_fa,
+            "fwdti_md": AFQ._fwdti_md,
             "dki_fa": AFQ._dki_fa,
             "dki_md": AFQ._dki_md,
             "dki_awf": AFQ._dki_awf,
@@ -654,15 +661,19 @@ class AFQ(object):
                 # For bvals and bvecs, use ``get_bval()`` and ``get_bvec()`` to
                 # walk up the file tree and inherit the closest bval and bvec
                 # files. Maintain input ``bids_filters`` in case user wants to
-                # specify acquisition labels, but pop suffix since it is
+                # specify acquisition labels, but pop suffix and extension since it is
                 # already specified inside ``get_bvec()`` and ``get_bval()``
                 suffix = bids_filters.pop("suffix", None)
+                extension = bids_filters.pop("extension", None)
                 bvec_file_list.append(bids_layout.get_bvec(dwi_data_file,
                                                            **bids_filters))
                 bval_file_list.append(bids_layout.get_bval(dwi_data_file,
                                                            **bids_filters))
                 if suffix is not None:
                     bids_filters["suffix"] = suffix
+                
+                if extension is not None:
+                    bids_filters["extension"] = extension
 
                 if custom_tractography_bids_filters is not None:
                     custom_tract_list.append(
@@ -859,6 +870,35 @@ class AFQ(object):
             row['timing']['DTI'] = time() - start_time
         return dti_params_file
 
+    def _fwdti(self, row):
+        fwdti_params_file = self._get_fname(
+            row, '_model-FWDTI_diffmodel.nii.gz')
+        if not op.exists(fwdti_params_file):
+            data, gtab, _ = self._get_data_gtab(row)
+            brain_mask_file = self._brain_mask(row)
+            mask = nib.load(brain_mask_file).get_fdata()
+            start_time = time()
+            dtf = fwdti_fit(gtab, data, mask=mask)
+            self.log_and_save_nii(nib.Nifti1Image(dtf.model_params,
+                                                  row['dwi_affine']),
+                                  fwdti_params_file)
+            meta_fname = self._get_fname(row, '_model-FWDTI_diffmodel.json')
+            meta = dict(
+                Parameters=dict(
+                    FitMethod="NLS"),
+                OutlierRejection=False,
+                ModelURL=f"{DIPY_GH}reconst/fwdti.py")
+            afd.write_json(meta_fname, meta)
+            row['timing']['FWDTI'] = time() - start_time
+        return fwdti_params_file
+
+    def _fwdti_fit(self, row):
+        fwdti_params_file = self._fwdti(row)
+        fwdti_params = nib.load(fwdti_params_file).get_fdata()
+        fwmodel = dpy_fwdti.FreeWaterTensorModel(row['gtab'])
+        fwfit = dpy_fwdti.FreeWaterTensorFit(fwmodel, fwdti_params)
+        return fwfit
+
     def _dki_fit(self, row):
         dki_params_file = self._dki(row)
         dki_params = nib.load(dki_params_file).get_fdata()
@@ -936,6 +976,30 @@ class AFQ(object):
 
         return pmap_file
 
+    def _fwdti_fa(self, row):
+        fwdti_fa_file = self._get_fname(row, '_model-FWDTI_FA.nii.gz')
+        if not op.exists(fwdti_fa_file):
+            tf = self._fwdti_fit(row)
+            fa = tf.fa
+            self.log_and_save_nii(nib.Nifti1Image(fa, row['dwi_affine']),
+                                  fwdti_fa_file)
+            meta_fname = self._get_fname(row, '_model-FWDTI_FA.json')
+            meta = dict()
+            afd.write_json(meta_fname, meta)
+        return fwdti_fa_file
+
+    def _fwdti_md(self, row):
+        fwdti_md_file = self._get_fname(row, '_model-FWDTI_MD.nii.gz')
+        if not op.exists(fwdti_md_file):
+            tf = self._fwdti_fit(row)
+            md = tf.md
+            self.log_and_save_nii(nib.Nifti1Image(md, row['dwi_affine']),
+                                  fwdti_md_file)
+            meta_fname = self._get_fname(row, '_model-FWDTI_MD.json')
+            meta = dict()
+            afd.write_json(meta_fname, meta)
+        return fwdti_md_file
+
     def _dti_fa(self, row):
         dti_fa_file = self._get_fname(row, '_model-DTI_FA.nii.gz')
         if not op.exists(dti_fa_file):
@@ -986,6 +1050,42 @@ class AFQ(object):
             meta = dict()
             afd.write_json(meta_fname, meta)
         return dti_md_file
+    
+    def _dti_ad(self, row):
+        dti_ad_file = self._get_fname(row, '_model-DTI_AD.nii.gz')
+        if not op.exists(dti_ad_file):
+            tf = self._dti_fit(row)
+            ad = tf.ad
+            self.log_and_save_nii(nib.Nifti1Image(ad, row['dwi_affine']),
+                                  dti_ad_file)
+            meta_fname = self._get_fname(row, '_model-DTI_AD.json')
+            meta = dict()
+            afd.write_json(meta_fname, meta)
+        return dti_ad_file
+    
+    def _dti_ga(self, row):
+        dti_ga_file = self._get_fname(row, '_model-DTI_GA.nii.gz')
+        if not op.exists(dti_ga_file):
+            tf = self._dti_fit(row)
+            ga = tf.ga
+            self.log_and_save_nii(nib.Nifti1Image(ga, row['dwi_affine']),
+                                  dti_ga_file)
+            meta_fname = self._get_fname(row, '_model-DTI_GA.json')
+            meta = dict()
+            afd.write_json(meta_fname, meta)
+        return dti_ga_file
+
+    def _dti_rd(self, row):
+        dti_rd_file = self._get_fname(row, '_model-DTI_RD.nii.gz')
+        if not op.exists(dti_rd_file):
+            tf = self._dti_fit(row)
+            rd = tf.rd
+            self.log_and_save_nii(nib.Nifti1Image(rd, row['dwi_affine']),
+                                  dti_rd_file)
+            meta_fname = self._get_fname(row, '_model-DTI_RD.json')
+            meta = dict()
+            afd.write_json(meta_fname, meta)
+        return dti_rd_file
 
     def _dki_fa(self, row):
         dki_fa_file = self._get_fname(row, '_model-DKI_FA.nii.gz')
@@ -1172,6 +1272,8 @@ class AFQ(object):
                 params_file = self._csd(row, msmt=True)
             elif odf_model == "DKI":
                 params_file = self._dki(row)
+            elif odf_model == "FWDTI":
+                params_file = self._fwdti(row)
 
             tracking_params = self.tracking_params.copy()
             if isinstance(self.tracking_params['seed_mask'], Definition):
@@ -1903,6 +2005,30 @@ class AFQ(object):
 
     brain_mask = property(get_brain_mask, set_brain_mask)
 
+    def set_fwdti_fa(self):
+        if 'fwdti_fa_file' not in self.data_frame.columns:
+            self.data_frame['fwdti_fa_file'] =\
+                self.data_frame.apply(self._fwdti_fa,
+                                      axis=1)
+
+    def get_fwdti_fa(self):
+        self.set_fwdti_fa()
+        return self.data_frame['dti_fa_file']
+
+    fwdti_fa = property(get_fwdti_fa, set_fwdti_fa)
+
+    def set_fwdti_md(self):
+        if 'fwdti_md_file' not in self.data_frame.columns:
+            self.data_frame['fwdti_md_file'] =\
+                self.data_frame.apply(self._fwdti_md,
+                                      axis=1)
+
+    def get_fwdti_md(self):
+        self.set_fwdti_md()
+        return self.data_frame['dti_md_file']
+
+    fwdti_md = property(get_fwdti_md, set_fwdti_md)
+
     def set_dti(self):
         if 'dti_params_file' not in self.data_frame.columns:
             self.data_frame['dti_params_file'] =\
@@ -1962,6 +2088,42 @@ class AFQ(object):
         return self.data_frame['dti_md_file']
 
     dti_md = property(get_dti_md, set_dti_md)
+
+    def set_dti_ad(self):
+        if 'dti_ad_file' not in self.data_frame.columns:
+            self.data_frame['dti_ad_file'] =\
+                self.data_frame.apply(self._dti_ad,
+                                        axis=1)
+
+    def get_dti_ad(self):
+        self.set_dti_ad()
+        return self.data_frame['dti_ad_file']
+
+    dti_ad = property(get_dti_ad, set_dti_ad)
+
+    def set_dti_ga(self):
+        if 'dti_ga_file' not in self.data_frame.columns:
+            self.data_frame['dti_ga_file'] =\
+                self.data_frame.apply(self._dti_ga,
+                                      axis=1)
+
+    def get_dti_ga(self):
+        self.set_dti_ga()
+        return self.data_frame['dti_ga_file']
+
+    dti_ga = property(get_dti_ga, set_dti_ga)
+
+    def set_dti_rd(self):
+        if 'dti_rd_file' not in self.data_frame.columns:
+            self.data_frame['dti_rd_file'] =\
+                self.data_frame.apply(self._dti_rd,
+                                      axis=1)
+
+    def get_dti_rd(self):
+        self.set_dti_rd()
+        return self.data_frame['dti_rd_file']
+
+    dti_rd = property(get_dti_rd, set_dti_rd)
 
     def set_dki(self):
         if 'dki_params_file' not in self.data_frame.columns:
